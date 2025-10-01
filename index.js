@@ -1,42 +1,37 @@
 require("dotenv").config();
+const express = require("express");
 const { Telegraf, Markup } = require("telegraf");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const SECRET_CHANNEL_ID = process.env.SECRET_CHANNEL_ID;
 
-// Foydalanuvchi holati
+// === STATE STORAGE ===
 const userState = {};
-// Telefon raqamlar
 const userContacts = {};
 
-// /start komandasi
 bot.start((ctx) => {
   userState[ctx.from.id] = { step: "phone" };
   ctx.reply(
     "Salom! Avval telefon raqamingizni yuboring 👇",
     Markup.keyboard([
       [Markup.button.contactRequest("📞 Telefon raqamni yuborish")]
-    ])
-      .resize()
-      .oneTime()
+    ]).resize().oneTime()
   );
 });
 
-// Telefon raqam qabul qilish
 bot.on("contact", (ctx) => {
   userContacts[ctx.from.id] = ctx.message.contact.phone_number;
   userState[ctx.from.id] = { step: "fullname" };
-  ctx.reply("✅ Telefon raqamingiz qabul qilindi.\nEndi ismingiz va familiyangizni yozing:");
+  ctx.reply("✅ Telefon qabul qilindi.\nEndi ism-familyani yozing:");
 });
 
-// Ism familiya va mavzu qabul qilish
 bot.on("text", (ctx) => {
   const state = userState[ctx.from.id];
   if (!state) return;
 
   if (state.step === "fullname") {
     userState[ctx.from.id] = { step: "topic", fullname: ctx.message.text };
-    return ctx.reply("✅ Qabul qilindi.\nEndi videoning mavzusini yozing:");
+    return ctx.reply("✅ Qabul qilindi.\nEndi mavzuni yozing:");
   }
 
   if (state.step === "topic") {
@@ -45,15 +40,14 @@ bot.on("text", (ctx) => {
       fullname: state.fullname,
       topic: ctx.message.text,
     };
-    return ctx.reply("✅ Mavzu qabul qilindi.\nEndi video yoki rasm yuboring:");
+    return ctx.reply("✅ Qabul qilindi.\nEndi video yoki rasm yuboring:");
   }
 });
 
-// Media (video yoki rasm) qabul qilish
 async function handleMedia(ctx, fileId, type) {
   const state = userState[ctx.from.id];
   if (!state || state.step !== "media") {
-    return ctx.reply("❌ Avval /start bosib ketma-ketlikni bajaring.");
+    return ctx.reply("❌ Avval /start bosing.");
   }
 
   const u = ctx.from;
@@ -71,32 +65,32 @@ async function handleMedia(ctx, fileId, type) {
 📝 Mavzu: ${topic}
   `;
 
-  try {
-    if (type === "video") {
-      await ctx.telegram.sendVideo(SECRET_CHANNEL_ID, fileId, { caption });
-    } else if (type === "rasm") {
-      await ctx.telegram.sendPhoto(SECRET_CHANNEL_ID, fileId, { caption });
-    }
-
-    await ctx.reply("✅ Materialingiz qabul qilindi va kanalga yuborildi. Rahmat!");
-    userState[ctx.from.id] = null; // reset
-  } catch (err) {
-    console.error("❌ Yuborishda xatolik:", err);
-    await ctx.reply("❌ Xatolik yuz berdi. Keyinroq urinib ko‘ring.");
+  if (type === "video") {
+    await ctx.telegram.sendVideo(SECRET_CHANNEL_ID, fileId, { caption });
+  } else {
+    await ctx.telegram.sendPhoto(SECRET_CHANNEL_ID, fileId, { caption });
   }
+
+  await ctx.reply("✅ Material qabul qilindi va kanalga yuborildi.");
+  userState[ctx.from.id] = null;
 }
 
-// Video qabul qilish
-bot.on("video", (ctx) => {
-  handleMedia(ctx, ctx.message.video.file_id, "video");
-});
-
-// Rasm qabul qilish
+bot.on("video", (ctx) => handleMedia(ctx, ctx.message.video.file_id, "video"));
 bot.on("photo", (ctx) => {
-  // eng katta sifatdagi rasmini olish
   const photo = ctx.message.photo[ctx.message.photo.length - 1];
   handleMedia(ctx, photo.file_id, "rasm");
 });
 
-bot.launch();
-console.log("🤖 Bot ishga tushdi...");
+// === WEBHOOK SERVER ===
+const app = express();
+app.use(express.json());
+app.use(bot.webhookCallback("/secret-path"));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, async () => {
+  console.log("🚀 Server ishlayapti, port:", PORT);
+
+  const webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/secret-path`;
+  await bot.telegram.setWebhook(webhookUrl);
+  console.log("✅ Webhook ulandi:", webhookUrl);
+});

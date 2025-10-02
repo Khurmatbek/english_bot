@@ -12,9 +12,9 @@ const userContacts = {};
 bot.start((ctx) => {
   userState[ctx.from.id] = { step: "phone" };
   ctx.reply(
-    "Salom! Avval telefon raqamingizni yuboring 👇",
+    "Hello! Please share your phone number 👇",
     Markup.keyboard([
-      [Markup.button.contactRequest("📞 Telefon raqamni yuborish")]
+      [Markup.button.contactRequest("📞 Share phone number")]
     ]).resize().oneTime()
   );
 });
@@ -22,7 +22,7 @@ bot.start((ctx) => {
 bot.on("contact", (ctx) => {
   userContacts[ctx.from.id] = ctx.message.contact.phone_number;
   userState[ctx.from.id] = { step: "fullname" };
-  ctx.reply("✅ Telefon qabul qilindi.\nEndi ism-familyani yozing:");
+  ctx.reply("✅ Phone received.\nNow type your full name:");
 });
 
 bot.on("text", (ctx) => {
@@ -31,7 +31,7 @@ bot.on("text", (ctx) => {
 
   if (state.step === "fullname") {
     userState[ctx.from.id] = { step: "topic", fullname: ctx.message.text };
-    return ctx.reply("✅ Qabul qilindi.\nEndi mavzuni yozing:");
+    return ctx.reply("✅ Saved.\nNow type the topic:");
   }
 
   if (state.step === "topic") {
@@ -40,73 +40,79 @@ bot.on("text", (ctx) => {
       fullname: state.fullname,
       topic: ctx.message.text,
     };
-    return ctx.reply("✅ Qabul qilindi.\nEndi video, dumaloq video yoki rasm yuboring:");
+    return ctx.reply("✅ Saved.\nNow send a video, round video (video note) or photo:");
   }
 });
 
-// 🟢 Umumiy media handler
 async function handleMedia(ctx, fileId, type) {
-  const state = userState[ctx.from.id];
-  if (!state || state.step !== "media") {
-    return ctx.reply("❌ Avval /start bosing.");
-  }
+  try {
+    const state = userState[ctx.from.id];
+    if (!state || state.step !== "media") {
+      return ctx.reply("❌ Please start again with /start.");
+    }
 
-  const u = ctx.from;
-  const fullname = state.fullname || `${u.first_name || ""} ${u.last_name || ""}`;
-  const username = u.username ? `@${u.username}` : "❌ Username yo‘q";
-  const phone = userContacts[u.id] || "❌ Telefon raqam yo‘q";
-  const topic = state.topic || "Mavzu kiritilmagan";
+    const u = ctx.from;
+    const fullname = state.fullname || `${u.first_name || ""} ${u.last_name || ""}`;
+    const username = u.username ? `@${u.username}` : "❌ No username";
+    const phone = userContacts[u.id] || "❌ No phone number";
+    const topic = state.topic || "No topic";
 
-  const caption = `
-🎥 Yangi ${type}
+    const caption = `
+🎥 New ${type}
 
-👤 Ism: ${fullname}
-📞 Telefon: ${phone}
+👤 Name: ${fullname}
+📞 Phone: ${phone}
 🔗 Username: ${username}
-📝 Mavzu: ${topic}
-  `;
+📝 Topic: ${topic}
+    `;
 
-  if (type === "video") {
-    // Oddiy video
-    await ctx.telegram.sendVideo(SECRET_CHANNEL_ID, fileId, { caption });
-  } else if (type === "dumaloq video") {
-    // Dumaloq video – caption ishlamaydi, shuning uchun alohida yuboramiz
-    await ctx.telegram.sendVideoNote(SECRET_CHANNEL_ID, fileId);
-    await ctx.telegram.sendMessage(SECRET_CHANNEL_ID, caption);
-  } else if (type === "rasm") {
-    // Rasm
-    await ctx.telegram.sendPhoto(SECRET_CHANNEL_ID, fileId, { caption });
+    if (type === "video") {
+      await ctx.telegram.sendVideo(SECRET_CHANNEL_ID, fileId, { caption });
+    } else if (type === "round video") {
+      // Correct way to forward round video
+      await ctx.telegram.sendVideoNote(SECRET_CHANNEL_ID, fileId);
+      await ctx.telegram.sendMessage(SECRET_CHANNEL_ID, caption);
+    } else if (type === "photo") {
+      await ctx.telegram.sendPhoto(SECRET_CHANNEL_ID, fileId, { caption });
+    }
+
+    await ctx.reply("✅ Media received and sent to the channel.");
+    userState[ctx.from.id] = null;
+
+  } catch (err) {
+    console.error("❌ Error sending media:", err);
+    ctx.reply("⚠️ Failed to send media. Check server logs for details.");
   }
-
-  await ctx.reply("✅ Material qabul qilindi va kanalga yuborildi.");
-  userState[ctx.from.id] = null;
 }
 
-// 🟢 Oddiy video
-bot.on("video", (ctx) => handleMedia(ctx, ctx.message.video.file_id, "video"));
+// Standard video
+bot.on("video", (ctx) => {
+  console.log("📹 Received video:", ctx.message.video.file_id);
+  handleMedia(ctx, ctx.message.video.file_id, "video");
+});
 
-// 🟢 Foto
+// Photo
 bot.on("photo", (ctx) => {
   const photo = ctx.message.photo[ctx.message.photo.length - 1];
-  handleMedia(ctx, photo.file_id, "rasm");
+  console.log("🖼️ Received photo:", photo.file_id);
+  handleMedia(ctx, photo.file_id, "photo");
 });
 
-// 🟢 Dumaloq video
+// Round video (video_note)
 bot.on("video_note", (ctx) => {
-  handleMedia(ctx, ctx.message.video_note.file_id, "dumaloq video");
+  console.log("⭕ Received round video:", ctx.message.video_note.file_id);
+  handleMedia(ctx, ctx.message.video_note.file_id, "round video");
 });
 
-
-// ====== EXPRESS + WEBHOOK ======
 const app = express();
 app.use(express.json());
 app.use(bot.webhookCallback("/secret-path"));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
-  console.log("🚀 Server ishlayapti, port:", PORT);
+  console.log("🚀 Server is running on port:", PORT);
 
   const webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/secret-path`;
   await bot.telegram.setWebhook(webhookUrl);
-  console.log("✅ Webhook ulandi:", webhookUrl);
+  console.log("✅ Webhook set:", webhookUrl);
 });

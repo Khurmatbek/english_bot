@@ -40,7 +40,7 @@ bot.on("text", (ctx) => {
       fullname: state.fullname,
       topic: ctx.message.text,
     };
-    return ctx.reply("✅ Qabul qilindi.\nEndi video yoki rasm yuboring:");
+    return ctx.reply("✅ Qabul qilindi.\nEndi video, dumaloq video yoki rasm yuboring:");
   }
 });
 
@@ -67,7 +67,11 @@ async function handleMedia(ctx, fileId, type) {
 
   if (type === "video") {
     await ctx.telegram.sendVideo(SECRET_CHANNEL_ID, fileId, { caption });
-  } else {
+  } else if (type === "dumaloq video") {
+    // Dumaloq video caption qo‘llamaydi, shuning uchun alohida xabar yuboramiz
+    await ctx.telegram.sendVideoNote(SECRET_CHANNEL_ID, fileId);
+    await ctx.telegram.sendMessage(SECRET_CHANNEL_ID, caption);
+  } else if (type === "rasm") {
     await ctx.telegram.sendPhoto(SECRET_CHANNEL_ID, fileId, { caption });
   }
 
@@ -75,13 +79,18 @@ async function handleMedia(ctx, fileId, type) {
   userState[ctx.from.id] = null;
 }
 
+// === MEDIA HANDLERS ===
 bot.on("video", (ctx) => handleMedia(ctx, ctx.message.video.file_id, "video"));
+
+bot.on("video_note", (ctx) =>
+  handleMedia(ctx, ctx.message.video_note.file_id, "dumaloq video")
+);
+
 bot.on("photo", (ctx) => {
   const photo = ctx.message.photo[ctx.message.photo.length - 1];
   handleMedia(ctx, photo.file_id, "rasm");
 });
 
-// === WEBHOOK SERVER ===
 const app = express();
 app.use(express.json());
 app.use(bot.webhookCallback("/secret-path"));

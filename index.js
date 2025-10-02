@@ -9,6 +9,7 @@ const SECRET_CHANNEL_ID = process.env.SECRET_CHANNEL_ID;
 const userState = {};
 const userContacts = {};
 
+// /start komandasi
 bot.start((ctx) => {
   userState[ctx.from.id] = { step: "phone" };
   ctx.reply(
@@ -19,12 +20,14 @@ bot.start((ctx) => {
   );
 });
 
+// Telefon qabul qilish
 bot.on("contact", (ctx) => {
   userContacts[ctx.from.id] = ctx.message.contact.phone_number;
   userState[ctx.from.id] = { step: "fullname" };
   ctx.reply("✅ Telefon qabul qilindi.\nEndi ism-familyani yozing:");
 });
 
+// Textlarni ketma-ket olish
 bot.on("text", (ctx) => {
   const state = userState[ctx.from.id];
   if (!state) return;
@@ -44,6 +47,7 @@ bot.on("text", (ctx) => {
   }
 });
 
+// Universal media handler
 async function handleMedia(ctx, fileId, type) {
   const state = userState[ctx.from.id];
   if (!state || state.step !== "media") {
@@ -68,7 +72,7 @@ async function handleMedia(ctx, fileId, type) {
   if (type === "video") {
     await ctx.telegram.sendVideo(SECRET_CHANNEL_ID, fileId, { caption });
   } else if (type === "dumaloq video") {
-    // Dumaloq video caption qo‘llamaydi, shuning uchun alohida xabar yuboramiz
+    // Dumaloq video caption qabul qilmaydi, shuning uchun alohida yuboramiz
     await ctx.telegram.sendVideoNote(SECRET_CHANNEL_ID, fileId);
     await ctx.telegram.sendMessage(SECRET_CHANNEL_ID, caption);
   } else if (type === "rasm") {
@@ -80,17 +84,22 @@ async function handleMedia(ctx, fileId, type) {
 }
 
 // === MEDIA HANDLERS ===
+
+// Oddiy video
 bot.on("video", (ctx) => handleMedia(ctx, ctx.message.video.file_id, "video"));
 
+// Dumaloq video (video_note)
 bot.on("video_note", (ctx) =>
   handleMedia(ctx, ctx.message.video_note.file_id, "dumaloq video")
 );
 
+// Rasm
 bot.on("photo", (ctx) => {
   const photo = ctx.message.photo[ctx.message.photo.length - 1];
   handleMedia(ctx, photo.file_id, "rasm");
 });
 
+// === EXPRESS SERVER ===
 const app = express();
 app.use(express.json());
 app.use(bot.webhookCallback("/secret-path"));
@@ -100,6 +109,9 @@ app.listen(PORT, async () => {
   console.log("🚀 Server ishlayapti, port:", PORT);
 
   const webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/secret-path`;
-  await bot.telegram.setWebhook(webhookUrl);
+  await bot.telegram.setWebhook(webhookUrl, {
+    allowed_updates: ["message", "video", "video_note", "photo", "contact", "text"]
+  });
+
   console.log("✅ Webhook ulandi:", webhookUrl);
 });
